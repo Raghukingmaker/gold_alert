@@ -1,0 +1,16 @@
+# Environment variables (contains secrets)
+.env
+
+# Compiled binaries
+main
+*.exe
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
