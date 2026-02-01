@@ -33,3 +33,4 @@ jobs:
           git add state.json
           git commit -m "Update gold price state" || echo "No changes"
           git push
+
