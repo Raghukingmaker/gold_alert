@@ -3,127 +3,76 @@ package internal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 )
 
 type GoldPrices struct {
-	Price24K float64 // INR per 10 grams
-	Price22K float64 // INR per 10 grams
+	Price24K float64 // INR per 10 grams (999 purity)
+	Price22K float64 // INR per 10 grams (916 purity)
 }
 
-type goldAPIResponse struct {
-	Price float64 `json:"price"`
+type ibjaData struct {
+	Purity999 []float64 `json:"purity999"`
+	Purity916 []float64 `json:"purity916"`
 }
 
-type currencyAPIResponse struct {
-	USD map[string]float64 `json:"usd"`
-}
-
-// FetchGoldPrices returns current 24K and 22K gold prices in INR per 10 grams.
-// It fetches the USD spot price from gold-api.com and converts using live USD/INR rate.
+// FetchGoldPrices fetches live 24K and 22K gold prices in INR per 10 grams
+// directly from IBJA (India Bullion and Jewellers Association) — ibjarates.com.
+// This is the official Indian bullion source used by jewellers across India.
 func FetchGoldPrices() (GoldPrices, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
-	goldPriceUSD, err := fetchGoldPriceUSD(client)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://www.ibjarates.com/", nil)
 	if err != nil {
-		return GoldPrices{}, fmt.Errorf("fetching gold price: %w", err)
+		return GoldPrices{}, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return GoldPrices{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return GoldPrices{}, fmt.Errorf("IBJA returned status %d", resp.StatusCode)
 	}
 
-	usdToINR, err := fetchUSDToINR(client)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return GoldPrices{}, fmt.Errorf("fetching exchange rate: %w", err)
+		return GoldPrices{}, err
 	}
 
-	// gold-api.com returns price per troy ounce in USD
-	// 1 troy ounce = 31.1035 grams
-	// India quotes gold price per 10 grams
-	const gramsPerTroyOunce = 31.1035
-	pricePerGramUSD := goldPriceUSD / gramsPerTroyOunce
-	price24K := pricePerGramUSD * 10 * usdToINR
+	// Extract the hidden field: <input id="HdnGold" value="{&quot;purity999&quot;:[...]}" />
+	re := regexp.MustCompile(`HdnGold[^>]+value="([^"]+)"`)
+	matches := re.FindSubmatch(body)
+	if len(matches) < 2 {
+		return GoldPrices{}, errors.New("IBJA: could not find gold data in page")
+	}
 
-	// 22K gold = 22/24 purity of 24K gold
-	price22K := price24K * (22.0 / 24.0)
+	// Decode HTML entities: &quot; -> "
+	jsonStr := strings.ReplaceAll(string(matches[1]), "&quot;", `"`)
 
+	var data ibjaData
+	if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
+		return GoldPrices{}, fmt.Errorf("IBJA: failed to parse data: %w", err)
+	}
+
+	if len(data.Purity999) == 0 || len(data.Purity916) == 0 {
+		return GoldPrices{}, errors.New("IBJA: price data is empty")
+	}
+
+	// Last element = today's rate
 	return GoldPrices{
-		Price24K: price24K,
-		Price22K: price22K,
+		Price24K: data.Purity999[len(data.Purity999)-1],
+		Price22K: data.Purity916[len(data.Purity916)-1],
 	}, nil
-}
-
-func fetchGoldPriceUSD(client *http.Client) (float64, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.gold-api.com/price/XAU", nil)
-	if err != nil {
-		return 0, err
-	}
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("gold API returned status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, err
-	}
-
-	var result goldAPIResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return 0, err
-	}
-
-	if result.Price <= 0 {
-		return 0, fmt.Errorf("invalid gold price received: %f", result.Price)
-	}
-
-	return result.Price, nil
-}
-
-func fetchUSDToINR(client *http.Client) (float64, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://latest.currency-api.pages.dev/v1/currencies/usd.json", nil)
-	if err != nil {
-		return 0, err
-	}
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("currency API returned status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, err
-	}
-
-	var result currencyAPIResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return 0, err
-	}
-
-	rate, ok := result.USD["inr"]
-	if !ok || rate <= 0 {
-		return 0, fmt.Errorf("invalid INR rate received: %f", rate)
-	}
-
-	return rate, nil
 }
