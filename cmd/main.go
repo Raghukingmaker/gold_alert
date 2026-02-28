@@ -142,10 +142,10 @@ func buildEmailBody(state *internal.State, prices internal.GoldPrices, diff, pct
     <td colspan="2" style="background:linear-gradient(135deg,#1a237e 0%%,#1565c0 50%%,#0277bd 100%%);padding:36px 24px 28px;text-align:center;">
       <div style="font-size:36px;line-height:1;">&#128176;</div>
       <div style="margin-top:10px;font-size:24px;font-weight:bold;color:#ffffff;letter-spacing:3px;text-transform:uppercase;">Gold Price Alert</div>
-      <div style="margin-top:6px;display:inline-block;background:rgba(255,255,255,0.15);border-radius:20px;padding:4px 16px;">
-        <span style="font-size:12px;color:#90caf9;letter-spacing:1px;">&#127470;&#127475; INDIA &nbsp;&bull;&nbsp; Per 10 Grams</span>
+      <div style="margin-top:8px;display:inline-block;background:rgba(255,255,255,0.2);border-radius:20px;padding:5px 18px;border:1px solid rgba(255,255,255,0.3);">
+        <span style="font-size:12px;color:#ffffff;letter-spacing:2px;font-weight:bold;">INDIA &nbsp;&bull;&nbsp; Per 10 Grams</span>
       </div>
-      <div style="margin-top:12px;font-size:12px;color:#64b5f6;">%s</div>
+      <div style="margin-top:12px;font-size:13px;color:#ffffff;font-weight:bold;background:rgba(0,0,0,0.25);display:inline-block;padding:4px 14px;border-radius:6px;">%s</div>
     </td>
   </tr>
 
