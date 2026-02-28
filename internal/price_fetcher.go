@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+type GoldPrices struct {
+	Price24K float64 // INR per 10 grams
+	Price22K float64 // INR per 10 grams
+}
+
 type goldAPIResponse struct {
 	Price float64 `json:"price"`
 }
@@ -17,19 +22,19 @@ type currencyAPIResponse struct {
 	USD map[string]float64 `json:"usd"`
 }
 
-// FetchGoldPrice24K returns the current 24K gold price in INR per 10 grams.
+// FetchGoldPrices returns current 24K and 22K gold prices in INR per 10 grams.
 // It fetches the USD spot price from gold-api.com and converts using live USD/INR rate.
-func FetchGoldPrice24K() (float64, error) {
+func FetchGoldPrices() (GoldPrices, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
 
 	goldPriceUSD, err := fetchGoldPriceUSD(client)
 	if err != nil {
-		return 0, fmt.Errorf("fetching gold price: %w", err)
+		return GoldPrices{}, fmt.Errorf("fetching gold price: %w", err)
 	}
 
 	usdToINR, err := fetchUSDToINR(client)
 	if err != nil {
-		return 0, fmt.Errorf("fetching exchange rate: %w", err)
+		return GoldPrices{}, fmt.Errorf("fetching exchange rate: %w", err)
 	}
 
 	// gold-api.com returns price per troy ounce in USD
@@ -37,9 +42,15 @@ func FetchGoldPrice24K() (float64, error) {
 	// India quotes gold price per 10 grams
 	const gramsPerTroyOunce = 31.1035
 	pricePerGramUSD := goldPriceUSD / gramsPerTroyOunce
-	pricePerTenGramINR := pricePerGramUSD * 10 * usdToINR
+	price24K := pricePerGramUSD * 10 * usdToINR
 
-	return pricePerTenGramINR, nil
+	// 22K gold = 22/24 purity of 24K gold
+	price22K := price24K * (22.0 / 24.0)
+
+	return GoldPrices{
+		Price24K: price24K,
+		Price22K: price22K,
+	}, nil
 }
 
 func fetchGoldPriceUSD(client *http.Client) (float64, error) {
